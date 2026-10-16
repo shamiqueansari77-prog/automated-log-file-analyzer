@@ -1,0 +1,472 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Automated Log File Analyzer</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+</head>
+<body>
+    <div class="app-layout">
+        <!-- Top Navigation / Brand Header -->
+        <header class="app-header">
+            <div class="header-content">
+                <div class="brand-badge-container">
+                    <span class="badge badge-brand">LOG ANALYSIS</span>
+                    <span class="badge badge-version">v1.0 • Rule-Based</span>
+                </div>
+                <h1 class="brand-title">AUTOMATED LOG FILE ANALYZER</h1>
+                <p class="brand-subtitle">Upload. Analyze. Detect. Report.</p>
+            </div>
+        </header>
+
+        <!-- Main Content Area -->
+        <main class="main-container">
+            <!-- Flash Message Alerts -->
+            {% with messages = get_flashed_messages(with_categories=true) %}
+                {% if messages %}
+                    <div class="alerts-wrapper" role="alert">
+                        {% for category, message in messages %}
+                            <div class="alert alert-{{ category }}">
+                                <div class="alert-icon">
+                                    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                                        <circle cx="12" cy="12" r="10"></circle>
+                                        <line x1="12" y1="8" x2="12" y2="12"></line>
+                                        <line x1="12" y1="16" x2="12.01" y2="16"></line>
+                                    </svg>
+                                </div>
+                                <div class="alert-text">{{ message }}</div>
+                            </div>
+                        {% endfor %}
+                    </div>
+                {% endif %}
+            {% endwith %}
+
+            <!-- Upload Section -->
+            <section class="section upload-section" aria-labelledby="upload-heading">
+                <div class="section-header">
+                    <h2 id="upload-heading" class="section-title">
+                        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                            <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
+                            <polyline points="17 8 12 3 7 8"></polyline>
+                            <line x1="12" y1="3" x2="12" y2="15"></line>
+                        </svg>
+                        Select Log Source
+                    </h2>
+                    <span class="section-note">Supports .log and .txt files up to 5 MB</span>
+                </div>
+
+                <form id="uploadForm" action="{{ url_for('analyze') }}" method="POST" enctype="multipart/form-data" class="upload-form">
+                    <div class="dropzone" id="dropzone" role="button" tabindex="0" aria-label="Upload log file drop zone">
+                        <input type="file" id="log_file" name="log_file" accept=".log,.txt" class="file-input" required>
+                        <div class="dropzone-inner">
+                            <div class="dropzone-icon">
+                                <svg width="44" height="44" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round">
+                                    <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path>
+                                    <polyline points="14 2 14 8 20 8"></polyline>
+                                    <line x1="12" y1="18" x2="12" y2="12"></line>
+                                    <polyline points="9 15 12 12 15 15"></polyline>
+                                </svg>
+                            </div>
+                            <div class="dropzone-text">
+                                <p class="dropzone-primary-text">Drag and drop your log file here, or <span class="browse-link">browse file</span></p>
+                                <p class="dropzone-secondary-text">Supported formats: <strong>.log</strong>, <strong>.txt</strong> (Max size: <strong>5 MB</strong>)</p>
+                            </div>
+                            <div class="file-selected-indicator" id="fileIndicator" style="display: none;">
+                                <div class="file-info-badge">
+                                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                        <polyline points="20 6 9 17 4 12"></polyline>
+                                    </svg>
+                                    <span id="selectedFileName">No file selected</span>
+                                    <span id="selectedFileSize" class="file-size-tag"></span>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="upload-actions">
+                        <button type="submit" id="submitBtn" class="btn btn-primary">
+                            <span class="btn-icon">
+                                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                    <circle cx="11" cy="11" r="8"></circle>
+                                    <line x1="21" y1="21" x2="16.65" y2="16.65"></line>
+                                </svg>
+                            </span>
+                            <span class="btn-text">Analyze Log</span>
+                        </button>
+                    </div>
+                </form>
+            </section>
+
+            {% if results %}
+                <!-- Results Header Bar -->
+                <section class="results-header-bar">
+                    <div class="analysis-meta">
+                        <div class="meta-item">
+                            <span class="meta-label">File Analyzed:</span>
+                            <span class="meta-value filename-tag">{{ filename }}</span>
+                        </div>
+                        <div class="meta-item">
+                            <span class="meta-label">Total Lines:</span>
+                            <span class="meta-value">{{ results.total_lines }}</span>
+                        </div>
+                        <div class="meta-item">
+                            <span class="meta-label">Report ID:</span>
+                            <span class="meta-value code-pill">{{ report_id }}</span>
+                        </div>
+                    </div>
+                    <div class="results-actions">
+                        <a href="{{ url_for('download_report', report_id=report_id) }}" class="btn btn-export" id="exportBtn" download>
+                            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
+                                <polyline points="7 10 12 15 17 10"></polyline>
+                                <line x1="12" y1="15" x2="12" y2="3"></line>
+                            </svg>
+                            <span>EXPORT REPORT</span>
+                        </a>
+                        <a href="{{ url_for('index') }}" class="btn btn-secondary">
+                            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                <polyline points="1 4 1 10 7 10"></polyline>
+                                <path d="M3.51 15a9 9 0 1 0 2.13-9.36L1 10"></path>
+                            </svg>
+                            <span>New Analysis</span>
+                        </a>
+                    </div>
+                </section>
+
+                <!-- Stat Cards Grid -->
+                <section class="section stat-grid" aria-label="Log severity statistics">
+                    <div class="stat-card stat-total">
+                        <div class="stat-header">
+                            <span class="stat-label">TOTAL LOGS</span>
+                            <span class="stat-icon">Σ</span>
+                        </div>
+                        <div class="stat-value">{{ results.total_lines }}</div>
+                        <div class="stat-desc">Total lines in file</div>
+                    </div>
+
+                    <div class="stat-card stat-info">
+                        <div class="stat-header">
+                            <span class="stat-label">INFO</span>
+                            <span class="severity-dot dot-info"></span>
+                        </div>
+                        <div class="stat-value">{{ results.info }}</div>
+                        <div class="stat-desc">Standard operations</div>
+                    </div>
+
+                    <div class="stat-card stat-warning">
+                        <div class="stat-header">
+                            <span class="stat-label">WARNINGS</span>
+                            <span class="severity-dot dot-warning"></span>
+                        </div>
+                        <div class="stat-value">{{ results.warning }}</div>
+                        <div class="stat-desc">Potential risks</div>
+                    </div>
+
+                    <div class="stat-card stat-error">
+                        <div class="stat-header">
+                            <span class="stat-label">ERRORS</span>
+                            <span class="severity-dot dot-error"></span>
+                        </div>
+                        <div class="stat-value">{{ results.error }}</div>
+                        <div class="stat-desc">Failed operations</div>
+                    </div>
+
+                    <div class="stat-card stat-critical">
+                        <div class="stat-header">
+                            <span class="stat-label">CRITICAL</span>
+                            <span class="severity-dot dot-critical"></span>
+                        </div>
+                        <div class="stat-value">{{ results.critical }}</div>
+                        <div class="stat-desc">Severe incidents</div>
+                    </div>
+
+                    <div class="stat-card stat-debug">
+                        <div class="stat-header">
+                            <span class="stat-label">DEBUG</span>
+                            <span class="severity-dot dot-debug"></span>
+                        </div>
+                        <div class="stat-value">{{ results.debug }}</div>
+                        <div class="stat-desc">Diagnostic traces</div>
+                    </div>
+                </section>
+
+                <!-- System Health Panel -->
+                <section class="section health-panel {{ results.health.css_class }}" aria-labelledby="health-title">
+                    <div class="health-header">
+                        <div class="health-title-group">
+                            <span class="health-label">SYSTEM HEALTH</span>
+                            <div class="health-status-badge">
+                                <span class="health-status-pulse"></span>
+                                <h3 id="health-title" class="health-status-text">{{ results.health.status }}</h3>
+                            </div>
+                        </div>
+                        <div class="health-explanation">
+                            <p>{{ results.health.explanation }}</p>
+                        </div>
+                    </div>
+                </section>
+
+                <!-- Two-Column Issues Section: Important Issues & Repeated Issues -->
+                <div class="issues-grid">
+                    <!-- Important Issues Section -->
+                    <section class="section issue-column" aria-labelledby="important-heading">
+                        <div class="column-header">
+                            <div class="column-title-wrap">
+                                <h3 id="important-heading" class="column-title">IMPORTANT ISSUES</h3>
+                                <span class="badge-count">{{ results.important_issues|length }}</span>
+                            </div>
+                            <span class="column-subtitle">Critical events & high-priority errors</span>
+                        </div>
+
+                        <div class="issue-list">
+                            {% if results.important_issues %}
+                                {% for issue in results.important_issues %}
+                                    <div class="issue-card issue-{{ issue.severity|lower }}">
+                                        <div class="issue-meta">
+                                            <span class="severity-pill pill-{{ issue.severity|lower }}">{{ issue.severity }}</span>
+                                            <span class="line-ref">{% if issue.line_number != '-' %}Line {{ issue.line_number }}{% else %}Recurring{% endif %}</span>
+                                        </div>
+                                        <div class="issue-message">{{ issue.message }}</div>
+                                    </div>
+                                {% endfor %}
+                            {% else %}
+                                <div class="empty-state">
+                                    <p class="empty-text">No critical or high-priority issues detected.</p>
+                                </div>
+                            {% endif %}
+                        </div>
+                    </section>
+
+                    <!-- Repeated Issues Section -->
+                    <section class="section issue-column" aria-labelledby="repeated-heading">
+                        <div class="column-header">
+                            <div class="column-title-wrap">
+                                <h3 id="repeated-heading" class="column-title">REPEATED ISSUES</h3>
+                                <span class="badge-count">{{ results.repeated_issues|length }}</span>
+                            </div>
+                            <span class="column-subtitle">Recurring problems across log timeline</span>
+                        </div>
+
+                        <div class="issue-list">
+                            {% if results.repeated_issues %}
+                                {% for issue in results.repeated_issues %}
+                                    <div class="issue-card issue-{{ issue.severity|lower }}">
+                                        <div class="issue-meta">
+                                            <span class="severity-pill pill-{{ issue.severity|lower }}">{{ issue.severity }}</span>
+                                            <span class="repeat-count-tag">
+                                                <strong>{{ issue.count }}</strong> occurrences
+                                            </span>
+                                        </div>
+                                        <div class="issue-message">{{ issue.message }}</div>
+                                    </div>
+                                {% endfor %}
+                            {% else %}
+                                <div class="empty-state">
+                                    <p class="empty-text">No repeated issues detected.</p>
+                                </div>
+                            {% endif %}
+                        </div>
+                    </section>
+                </div>
+
+                <!-- Detailed Log Table Section -->
+                <section class="section table-section" aria-labelledby="details-heading">
+                    <div class="table-controls-header">
+                        <div class="table-title-group">
+                            <h3 id="details-heading" class="column-title">LOG DETAILS</h3>
+                            <span class="table-counter">
+                                Showing {{ results.entries|length }} of {{ results.total_lines }} lines
+                            </span>
+                        </div>
+
+                        <!-- Interactive Table Filter Tools -->
+                        <div class="filter-controls">
+                            <div class="search-box">
+                                <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                    <circle cx="11" cy="11" r="8"></circle>
+                                    <line x1="21" y1="21" x2="16.65" y2="16.65"></line>
+                                </svg>
+                                <input type="text" id="logSearch" placeholder="Filter log messages..." aria-label="Filter log messages">
+                            </div>
+                            <div class="severity-filter-group" role="group" aria-label="Filter by severity">
+                                <button type="button" class="filter-btn active" data-filter="ALL">All</button>
+                                <button type="button" class="filter-btn" data-filter="CRITICAL">Critical</button>
+                                <button type="button" class="filter-btn" data-filter="ERROR">Error</button>
+                                <button type="button" class="filter-btn" data-filter="WARNING">Warning</button>
+                                <button type="button" class="filter-btn" data-filter="INFO">Info</button>
+                                <button type="button" class="filter-btn" data-filter="DEBUG">Debug</button>
+                            </div>
+                        </div>
+                    </div>
+
+                    {% if results.is_truncated %}
+                        <div class="truncation-banner">
+                            <span class="truncation-icon">ℹ</span>
+                            <span>Displaying the first <strong>{{ results.display_limit }}</strong> entries for optimal browser performance. All <strong>{{ results.total_lines }}</strong> entries were analyzed for metrics and reporting.</span>
+                        </div>
+                    {% endif %}
+
+                    <div class="table-container">
+                        <table class="log-table" id="logTable">
+                            <thead>
+                                <tr>
+                                    <th scope="col" class="th-line">Line</th>
+                                    <th scope="col" class="th-severity">Severity</th>
+                                    <th scope="col" class="th-message">Message</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                {% for entry in results.entries %}
+                                    <tr class="log-row severity-row-{{ entry.severity|lower }}" data-severity="{{ entry.severity }}">
+                                        <td class="td-line">{{ entry.line_number }}</td>
+                                        <td class="td-severity">
+                                            <span class="severity-pill pill-{{ entry.severity|lower }}">{{ entry.severity }}</span>
+                                        </td>
+                                        <td class="td-message">
+                                            <code>{{ entry.message }}</code>
+                                        </td>
+                                    </tr>
+                                {% endfor %}
+                            </tbody>
+                        </table>
+                    </div>
+                </section>
+            {% endif %}
+        </main>
+
+        <!-- Application Footer -->
+        <footer class="app-footer">
+            <div class="footer-content">
+                <p>Automated Log File Analyzer • Computer Science & Engineering Academic Mini-Project</p>
+                <p class="footer-note">Rule-Based Diagnostic Engine • Built with Python & Flask</p>
+            </div>
+        </footer>
+    </div>
+
+    <!-- Vanilla JavaScript for Drag-and-Drop and Table Filter UX -->
+    <script>
+        document.addEventListener('DOMContentLoaded', function() {
+            // Drag and Drop Handling
+            const dropzone = document.getElementById('dropzone');
+            const fileInput = document.getElementById('log_file');
+            const fileIndicator = document.getElementById('fileIndicator');
+            const fileNameDisplay = document.getElementById('selectedFileName');
+            const fileSizeDisplay = document.getElementById('selectedFileSize');
+            const uploadForm = document.getElementById('uploadForm');
+            const submitBtn = document.getElementById('submitBtn');
+
+            if (dropzone && fileInput) {
+                // Clicking dropzone triggers input click
+                dropzone.addEventListener('click', function(e) {
+                    if (e.target !== fileInput) {
+                        fileInput.click();
+                    }
+                });
+
+                // Accessible keyboard activation
+                dropzone.addEventListener('keydown', function(e) {
+                    if (e.key === 'Enter' || e.key === ' ') {
+                        e.preventDefault();
+                        fileInput.click();
+                    }
+                });
+
+                ['dragenter', 'dragover'].forEach(eventName => {
+                    dropzone.addEventListener(eventName, function(e) {
+                        e.preventDefault();
+                        e.stopPropagation();
+                        dropzone.classList.add('dragover');
+                    });
+                });
+
+                ['dragleave', 'drop'].forEach(eventName => {
+                    dropzone.addEventListener(eventName, function(e) {
+                        e.preventDefault();
+                        e.stopPropagation();
+                        dropzone.classList.remove('dragover');
+                    });
+                });
+
+                dropzone.addEventListener('drop', function(e) {
+                    if (e.dataTransfer && e.dataTransfer.files.length > 0) {
+                        fileInput.files = e.dataTransfer.files;
+                        handleFileSelection();
+                    }
+                });
+
+                fileInput.addEventListener('change', handleFileSelection);
+
+                function handleFileSelection() {
+                    if (fileInput.files && fileInput.files.length > 0) {
+                        const file = fileInput.files[0];
+                        fileNameDisplay.textContent = file.name;
+                        
+                        // Format file size
+                        const sizeKB = (file.size / 1024).toFixed(1);
+                        fileSizeDisplay.textContent = '(' + (sizeKB < 1024 ? sizeKB + ' KB' : (sizeKB / 1024).toFixed(2) + ' MB') + ')';
+                        
+                        fileIndicator.style.display = 'block';
+                    } else {
+                        fileIndicator.style.display = 'none';
+                    }
+                }
+            }
+
+            // Submit Button Loading State
+            if (uploadForm && submitBtn) {
+                uploadForm.addEventListener('submit', function() {
+                    submitBtn.disabled = true;
+                    submitBtn.classList.add('loading');
+                    const btnText = submitBtn.querySelector('.btn-text');
+                    if (btnText) {
+                        btnText.textContent = 'Analyzing...';
+                    }
+                });
+            }
+
+            // Table Real-Time Filter & Search
+            const searchInput = document.getElementById('logSearch');
+            const filterButtons = document.querySelectorAll('.filter-btn');
+            const tableRows = document.querySelectorAll('.log-row');
+
+            if (tableRows.length > 0) {
+                let currentSeverity = 'ALL';
+                let currentSearchQuery = '';
+
+                function filterRows() {
+                    tableRows.forEach(row => {
+                        const rowSeverity = row.getAttribute('data-severity');
+                        const rowText = row.textContent.toLowerCase();
+                        
+                        const matchesSeverity = (currentSeverity === 'ALL' || rowSeverity === currentSeverity);
+                        const matchesSearch = (!currentSearchQuery || rowText.includes(currentSearchQuery));
+
+                        if (matchesSeverity && matchesSearch) {
+                            row.style.display = '';
+                        } else {
+                            row.style.display = 'none';
+                        }
+                    });
+                }
+
+                if (searchInput) {
+                    searchInput.addEventListener('input', function(e) {
+                        currentSearchQuery = e.target.value.trim().toLowerCase();
+                        filterRows();
+                    });
+                }
+
+                filterButtons.forEach(btn => {
+                    btn.addEventListener('click', function() {
+                        filterButtons.forEach(b => b.classList.remove('active'));
+                        this.classList.add('active');
+                        currentSeverity = this.getAttribute('data-filter');
+                        filterRows();
+                    });
+                });
+            }
+        });
+    </script>
+</body>
+</html>

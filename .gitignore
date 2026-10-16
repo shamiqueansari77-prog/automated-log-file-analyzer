@@ -1,0 +1,27 @@
+# Python cache and bytecode
+__pycache__/
+*.py[cod]
+*$py.class
+
+# Virtual environments
+venv/
+.venv/
+env/
+ENV/
+env.bak/
+venv.bak/
+
+# Environment variables and operating system files
+.env
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# Ignore uploaded user logs and generated reports at runtime
+uploads/*
+!uploads/.gitkeep
+reports/*
+!reports/.gitkeep
+
+# Ensure sample.log is tracked in repository
+!sample.log
