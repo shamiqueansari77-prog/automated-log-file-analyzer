@@ -1,35 +1,15 @@
-2026-10-16 08:00:01 INFO Application service initializing
-2026-10-16 08:00:02 DEBUG Loading configuration from config.production.json
-2026-10-16 08:00:04 INFO Environment variables loaded successfully
-2026-10-16 08:00:05 DEBUG Initializing thread pool with 8 active worker threads
-2026-10-16 08:00:08 INFO Connected to primary cache server on port 6379
-2026-10-16 08:00:10 INFO Service health check passed - ready to accept traffic
-2026-10-16 08:02:15 INFO User authentication successful for user_id=1042
-2026-10-16 08:03:22 DEBUG GET /api/v1/metrics response status 200 (took 14ms)
-2026-10-16 08:05:40 WARNING Memory usage reached 85%
-2026-10-16 08:07:11 INFO User authentication successful for user_id=1089
-2026-10-16 08:09:18 DEBUG Incoming webhook payload received from payment gateway
-2026-10-16 08:11:30 WARN High CPU usage detected on worker thread 3: 92%
-2026-10-16 08:14:02 WARNING Memory usage reached 85%
-2026-10-16 08:16:45 INFO API request POST /api/v1/orders processed successfully
-2026-10-16 08:19:10 ERROR Database connection failed: connection refused by host 10.0.0.4:5432
-2026-10-16 08:19:15 ERROR Database connection failed: connection refused by host 10.0.0.4:5432
-2026-10-16 08:19:22 ERROR Database connection failed: connection refused by host 10.0.0.4:5432
-2026-10-16 08:20:01 WARNING Retrying database connection in 5 seconds
-2026-10-16 08:20:07 INFO Database connection re-established with replica server
-2026-10-16 08:23:44 DEBUG Query cache hit ratio: 89.4%
-2026-10-16 08:26:12 WARNING Disk space low: partition /var/data at 88% capacity
-2026-10-16 08:28:55 ERROR Authentication failed: invalid credentials for user admin_svc
-2026-10-16 08:31:10 INFO User authentication successful for user_id=1105
-2026-10-16 08:35:20 WARNING Memory usage reached 85%
-2026-10-16 08:38:40 ERROR Upstream gateway timed out after 30000ms
-2026-10-16 08:41:05 DEBUG Session cleanup routine completed (purged 24 expired sessions)
-2026-10-16 08:44:19 WARN SSL certificate will expire in 14 days
-2026-10-16 08:47:33 ERROR Authentication failed: invalid credentials for user admin_svc
-2026-10-16 08:50:12 DEBUG Background task synchronization complete
-2026-10-16 08:52:00 CRITICAL Server process crashed: fatal out of memory signal received
-2026-10-16 08:52:05 INFO Supervisor initiating automated worker restart
-2026-10-16 08:52:08 INFO Spawning worker process 18241
-2026-10-16 08:52:12 INFO Application restarted and restored to stable state
-2026-10-16 08:55:00 DEBUG Health probe returned 200 OK from all endpoints
-2026-10-16 08:58:30 INFO Automated log rotation completed successfully
+INFO User logged in successfully
+WARNING Disk space is low
+ERROR Database connection failed
+INFO File uploaded successfully
+ERROR Database connection failed
+WARNING High memory usage detected
+INFO User logged out successfully
+ERROR Invalid password attempt
+INFO Application started
+WARNING CPU usage is high
+ERROR Database connection failed
+ERROR Server timeout
+INFO Backup completed successfully
+WARNING Network speed is slow
+ERROR Server timeout

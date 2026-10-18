@@ -1,201 +1,156 @@
-"""
-app.py - Main Flask Web Application
-Automated Log File Analyzer (CSE/AIML Academic Mini-Project)
-
-Production command for Render:
-    gunicorn app:app
-
-Local development command:
-    python app.py
-"""
-
-import os
+"""Small Flask application for classifying UTF-8 text logs."""
+from collections import Counter
+from datetime import datetime, timedelta, timezone
+from pathlib import Path
 import re
+import shutil
 import uuid
-from flask import (
-    Flask,
-    render_template,
-    request,
-    redirect,
-    url_for,
-    flash,
-    send_from_directory,
-    abort
-)
+
+from flask import Flask, abort, render_template, request, send_file
+from werkzeug.exceptions import RequestEntityTooLarge
 from werkzeug.utils import secure_filename
-import analyzer
 
-# Module-level Flask application instance (Required by Gunicorn)
 app = Flask(__name__)
-
-# Configuration
-app.config["SECRET_KEY"] = os.environ.get("SECRET_KEY", "log-analyzer-academic-key-2026")
-app.config["MAX_CONTENT_LENGTH"] = 5 * 1024 * 1024  # 5 MB upload limit
-
-# Safe runtime directories using absolute paths based on this file's location
-BASE_DIR = os.path.dirname(os.path.abspath(__file__))
-UPLOAD_FOLDER = os.path.join(BASE_DIR, "uploads")
-REPORTS_FOLDER = os.path.join(BASE_DIR, "reports")
-
-# Ensure required directories exist at runtime (safe for temporary filesystems like Render)
-os.makedirs(UPLOAD_FOLDER, exist_ok=True)
-os.makedirs(REPORTS_FOLDER, exist_ok=True)
-
-app.config["UPLOAD_FOLDER"] = UPLOAD_FOLDER
-app.config["REPORTS_FOLDER"] = REPORTS_FOLDER
-
-ALLOWED_EXTENSIONS = {".log", ".txt"}
+MAX_FILE_SIZE = 5 * 1024 * 1024
+app.config['MAX_CONTENT_LENGTH'] = MAX_FILE_SIZE + 64 * 1024
+UPLOAD_DIR = Path(__file__).resolve().parent / 'uploads'
+UPLOAD_DIR.mkdir(exist_ok=True)
+LEVEL_PATTERN = re.compile(r'\b(INFO|WARNING|WARN|ERROR)\b', re.IGNORECASE)
+INDIA_TIME = timezone(timedelta(hours=5, minutes=30))
 
 
 def allowed_file(filename):
-    """
-    Validates whether the uploaded file has an allowed extension (.log, .txt).
-    """
-    if not filename or "." not in filename:
-        return False
-    ext = os.path.splitext(filename)[1].lower()
-    return ext in ALLOWED_EXTENSIONS
+    return Path(filename).suffix.lower() in {'.log', '.txt'}
 
 
-@app.route("/", methods=["GET"])
+def analyze_log_file(path):
+    counts = dict.fromkeys(['INFO', 'WARNING', 'ERROR', 'OTHER'], 0)
+    errors = Counter()
+    with path.open(encoding='utf-8-sig') as log_file:
+        for raw_line in log_file:
+            if any(ord(char) < 32 and char not in '\t\r\n' for char in raw_line):
+                raise ValueError('This file contains binary or unreadable content. Upload UTF-8 text.')
+            line = raw_line.strip()
+            if not line:
+                continue
+            match = LEVEL_PATTERN.search(line)
+            level = match.group(1).upper() if match else 'OTHER'
+            if level == 'WARN':
+                level = 'WARNING'
+            counts[level] += 1
+            if level == 'ERROR':
+                message = line[match.end():].lstrip(' \t:]-') or '(No error message)'
+                errors[message] += 1
+    total = sum(counts.values())
+    if not total:
+        raise ValueError('No readable log entries found. Choose a file with non-blank text.')
+    return {'counts': counts, 'total': total, 'errors': errors.most_common()}
+
+
+def create_report(result, report_path):
+    counts = result['counts']
+    lines = ['AUTOMATED LOG FILE ANALYZER REPORT', '=' * 48,
+             f"File Name       : {result['filename']}",
+             f"Generated At    : {result['generated']} (IST)",
+             f"Total Log Lines : {result['total']}", '', 'MESSAGE SUMMARY', '-' * 48]
+    lines += [f'{level} Messages : {counts[level]}' for level in ['INFO', 'WARNING', 'ERROR']]
+    lines += [f"Other Messages : {counts['OTHER']}", '', 'SEVERITY SUMMARY', '-' * 48,
+              f"Low Severity    : {counts['INFO']}", f"Medium Severity : {counts['WARNING']}",
+              f"High Severity   : {counts['ERROR']}", '', 'ERROR FREQUENCY', '-' * 48]
+    lines += [f'{message} : {count}' for message, count in result['errors']]
+    if result['errors']:
+        message, count = result['errors'][0]
+        lines += ['', f'Most Frequent Error : {message}', f'Frequency : {count}']
+    else:
+        lines += ['No ERROR messages found.', '', 'Most Frequent Error : None', 'Frequency : 0']
+    report_path.write_text('\n'.join(lines) + '\n', encoding='utf-8')
+
+
+def cleanup_old_uploads():
+    """Reports expire after 24 hours; cleanup runs when another file is uploaded."""
+    cutoff = datetime.now().timestamp() - 86400
+    for folder in UPLOAD_DIR.iterdir():
+        if folder.is_dir() and re.fullmatch(r'[0-9a-f]{32}', folder.name):
+            try:
+                if folder.stat().st_mtime < cutoff:
+                    shutil.rmtree(folder)
+            except OSError:
+                app.logger.warning('Could not clean an expired upload')
+
+
+@app.route('/', methods=['GET', 'POST'])
 def index():
-    """
-    Renders the main dashboard page in its initial state (ready for upload).
-    """
-    return render_template("index.html")
-
-
-@app.route("/analyze", methods=["POST"])
-def analyze():
-    """
-    Handles file upload, input validation, log parsing, system health calculation,
-    and report generation.
-    """
-    # 1. Verify file part exists in request
-    if "log_file" not in request.files:
-        flash("No file part detected in request. Please select a log file.", "error")
-        return redirect(url_for("index"))
-        
-    file = request.files["log_file"]
-    
-    # 2. Check if a file was actually selected
-    if file.filename == "":
-        flash("No file was selected. Please choose a .log or .txt file to analyze.", "error")
-        return redirect(url_for("index"))
-        
-    # 3. Validate file extension
-    if not allowed_file(file.filename):
-        flash("Unsupported file format. Please upload a file ending in .log or .txt.", "error")
-        return redirect(url_for("index"))
-        
-    # 4. Secure filename and prepend UUID to prevent collisions and path traversal
-    safe_filename = secure_filename(file.filename)
-    if not safe_filename:
-        safe_filename = "uploaded_log.log"
-        
-    unique_file_id = uuid.uuid4().hex[:12]
-    stored_filename = f"{unique_file_id}_{safe_filename}"
-    saved_file_path = os.path.join(app.config["UPLOAD_FOLDER"], stored_filename)
-    
+    if request.method == 'GET':
+        return render_template('index.html')
+    job_dir = None
     try:
-        # Save file safely to uploads folder
-        file.save(saved_file_path)
-        
-        # 5. Read file content with encoding fallback
-        try:
-            with open(saved_file_path, "r", encoding="utf-8") as f:
-                content = f.read()
-        except UnicodeDecodeError:
-            # Fallback for logs encoded with latin-1 or Windows-1252
-            with open(saved_file_path, "r", encoding="latin-1") as f:
-                content = f.read()
-                
-        # 6. Check if file is empty
-        if not content or not content.strip():
-            flash("The uploaded file is empty. Please upload a file with log entries.", "error")
-            return redirect(url_for("index"))
-            
-        # 7. Analyze log content
-        results = analyzer.analyze_log(content)
-        
-        # 8. Generate plain-text summary report with unique report ID
-        report_id = uuid.uuid4().hex[:16]
-        report_text = analyzer.generate_report(results, safe_filename, report_id)
-        
-        report_filename = f"{report_id}.txt"
-        report_path = os.path.join(app.config["REPORTS_FOLDER"], report_filename)
-        with open(report_path, "w", encoding="utf-8") as f:
-            f.write(report_text)
-            
-        # 9. Render the dashboard with analysis results
-        return render_template(
-            "index.html",
-            results=results,
-            report_id=report_id,
-            filename=safe_filename
-        )
-        
-    except Exception as e:
-        # Catch internal processing errors gracefully without exposing stack traces
-        flash("An error occurred while processing the log file. Please verify the file format and try again.", "error")
-        return redirect(url_for("index"))
+        upload = request.files.get('file')
+        if not upload or not upload.filename:
+            raise ValueError('Choose a log file before analyzing.')
+        if not allowed_file(upload.filename):
+            raise ValueError('Unsupported file type. Please upload a .log or .txt file.')
+        filename = secure_filename(upload.filename)
+        if not filename:
+            raise ValueError('Please rename this file and try again.')
+        content = upload.stream.read(MAX_FILE_SIZE + 1)
+        if len(content) > MAX_FILE_SIZE:
+            raise RequestEntityTooLarge()
+        if not content:
+            raise ValueError('This file is empty. Choose a file containing log entries.')
+        cleanup_old_uploads()
+        token = uuid.uuid4().hex
+        job_dir = UPLOAD_DIR / token
+        job_dir.mkdir()
+        # A separate source folder prevents an uploaded report.txt from being overwritten.
+        (job_dir / 'source').mkdir()
+        path = job_dir / 'source' / filename
+        path.write_bytes(content)
+        result = analyze_log_file(path)
+        result.update(filename=filename, generated=datetime.now(INDIA_TIME).strftime('%d %b %Y, %I:%M:%S %p'), token=token)
+        create_report(result, job_dir / 'report.txt')
+        return render_template('index.html', result=result)
+    except RequestEntityTooLarge:
+        if job_dir:
+            shutil.rmtree(job_dir, ignore_errors=True)
+        raise
+    except (ValueError, UnicodeError) as error:
+        if job_dir:
+            shutil.rmtree(job_dir, ignore_errors=True)
+        message = 'Unable to read this file. Please upload UTF-8 text.' if isinstance(error, UnicodeError) else str(error)
+        return render_template('index.html', error=message), 400
+    except OSError:
+        if job_dir:
+            shutil.rmtree(job_dir, ignore_errors=True)
+        app.logger.exception('File processing failed')
+        return render_template('index.html', error='Unable to process the file. Please try again.'), 500
 
 
-@app.route("/download-report/<report_id>", methods=["GET"])
-def download_report(report_id):
-    """
-    Downloads the plain-text analysis report for a given report ID.
-    Validates report ID to prevent directory traversal attacks.
-    """
-    # Strict validation: report_id must be alphanumeric hex characters only
-    if not re.match(r"^[a-f0-9]{8,32}$", report_id):
-        flash("Invalid report identifier specified.", "error")
-        return redirect(url_for("index"))
-        
-    report_filename = f"{report_id}.txt"
-    report_path = os.path.join(app.config["REPORTS_FOLDER"], report_filename)
-    
-    if not os.path.exists(report_path):
-        flash("Requested report was not found or has expired.", "error")
-        return redirect(url_for("index"))
-        
-    return send_from_directory(
-        app.config["REPORTS_FOLDER"],
-        report_filename,
-        as_attachment=True,
-        download_name=f"log_analysis_report_{report_id}.txt",
-        mimetype="text/plain"
-    )
+@app.get('/report/<token>')
+def download_report(token):
+    if not re.fullmatch(r'[0-9a-f]{32}', token):
+        abort(404)
+    path = UPLOAD_DIR / token / 'report.txt'
+    if not path.is_file():
+        return render_template('index.html', error='This report has expired or is unavailable. Upload your file again.'), 404
+    return send_file(path, as_attachment=True, download_name='log_analysis_report.txt', mimetype='text/plain')
 
 
 @app.errorhandler(413)
-def request_entity_too_large(error):
-    """
-    Handles uploads exceeding MAX_CONTENT_LENGTH (5 MB).
-    """
-    flash("The uploaded file exceeds the 5 MB maximum file size limit. Please upload a smaller file.", "error")
-    return redirect(url_for("index"))
-
-
-@app.errorhandler(404)
-def not_found(error):
-    """
-    Handles 404 Not Found errors gracefully.
-    """
-    flash("The requested page or resource could not be found.", "error")
-    return redirect(url_for("index"))
+def too_large(error):
+    return render_template('index.html', error='The file is too large. Maximum size is 5 MB.'), 413
 
 
 @app.errorhandler(500)
 def server_error(error):
-    """
-    Handles unexpected 500 server errors cleanly without exposing stack traces.
-    """
-    flash("A server error occurred while processing your request.", "error")
-    return redirect(url_for("index"))
+    return render_template('index.html', error='Something went wrong. Please try again.'), 500
 
 
-# Local development entry point ONLY
-# Gunicorn will NOT execute this block when importing app:app
-if __name__ == "__main__":
+@app.after_request
+def security_headers(response):
+    response.headers['X-Content-Type-Options'] = 'nosniff'
+    response.headers['Cache-Control'] = 'no-store'
+    return response
+
+
+if __name__ == '__main__':
     app.run(debug=True)
