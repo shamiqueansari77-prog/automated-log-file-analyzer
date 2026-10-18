@@ -139,6 +139,6 @@ If origin already exists, use `git remote set-url origin https://github.com/sham
 Reference: https://render.com/docs/deploy-flask
 
 ## Live App
-Add Render URL after deployment.
+https://automated-log-file-analyzer.onrender.com
 
-Deployment is not complete until a real public URL has been tested. No live address is assumed.
+Deployed on Render’s free plan. The live homepage, CSS, sample upload, expected counts and report content have been verified.

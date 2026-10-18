@@ -80,7 +80,7 @@ def cleanup_old_uploads():
 
 @app.route('/', methods=['GET', 'POST'])
 def index():
-    if request.method == 'GET':
+    if request.method != 'POST':
         return render_template('index.html')
     job_dir = None
     try:
